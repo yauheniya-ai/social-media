@@ -1,0 +1,63 @@
+flowchart LR
+  subgraph PLAT[Social platforms]
+    FB[Facebook / Instagram]
+    YT[YouTube]
+    LI[LinkedIn]
+  end
+
+  FB -->|webhook| APIM[API Mgmt / Front Door]
+  APIM --> WH[Webhook receiver<br/>Container App]
+  POLL[Pollers<br/>Container Apps Jobs] <-->|poll| YT
+  POLL <-->|poll| LI
+
+  KV[(Key Vault<br/>tokens)] -.-> WH
+  KV -.-> POLL
+  KV -.-> PUB
+
+  WH --> SB[[Service Bus]]
+  POLL --> SB
+  WH --> BLOB[(Blob Storage<br/>raw payloads + source docs)]
+
+  subgraph FND[Microsoft Foundry]
+    LLM[LLM + embedding models]
+    DI[Document Intelligence<br/>OCR / layout]
+    CS[Content Safety<br/>+ Prompt Shields]
+  end
+
+  KBSRC[SharePoint / FAQ /<br/>comms guidelines] --> ING[KB ingestion job<br/>Container Apps Job<br/>custom chunking]
+  ING --> BLOB
+  ING -->|scanned PDFs| DI
+  ING -->|embeddings| LLM
+  ING --> PG
+
+  PG[(PostgreSQL + pgvector<br/>comments, drafts,<br/>audit, KB chunks)]
+
+  SB --> CLS
+  subgraph AGENT[Agent worker - Container App, KEDA]
+    CLS[1. Classify<br/>language, sentiment, spam] --> RAG[2. Retrieve KB]
+    RAG --> DRAFT[3. Draft + confidence/risk score]
+  end
+  CLS <--> LLM
+  DRAFT <--> LLM
+  RAG -->|query embedding| LLM
+  RAG --> PG
+  AGENT <-->|state| PG
+  DRAFT --> CS
+
+  CS --> ROUTE{Routing rules}
+  ROUTE -->|spam / safe FAQ| AUTO[Auto action]
+  ROUTE -->|normal| API
+  ROUTE -->|legal / press / crisis| ESC[Escalation<br/>Teams / ServiceNow]
+  ESC --> API
+
+  UI[Review UI<br/>React + SignalR] <-->|REST + live feed| API[API service<br/>Container App]
+  ENTRA[Entra ID] -.-> UI
+  ENTRA -.-> API
+  API <--> PG
+
+  API -->|approve / edit| PUB[Publish worker]
+  AUTO --> PUB
+  PUB -->|reply / hide / delete| PLAT
+
+  MON[App Insights /<br/>Log Analytics] -.-> AGENT
+  MON -.-> API
